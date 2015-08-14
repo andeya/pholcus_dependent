@@ -1,5 +1,6 @@
 # dependent
-Pholcus第三方依赖包源码下载。[点击下载]()
+
+Pholcus第三方依赖包源码下载（请放至 GOPATH/src 目录下）。[点击下载 ZIP](https://github.com/pholcus/dependent/archive/master.zip)
 
 ## Pholcus第三方依赖包清单
 
