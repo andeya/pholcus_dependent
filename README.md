@@ -8,7 +8,6 @@ Pholcus第三方依赖包源码下载（请放至 GOPATH/src 目录下）。[点
 go get "github.com/henrylee2cn/mahonia"
 go get "github.com/henrylee2cn/websocket.google"
 go get "github.com/PuerkitoBio/goquery"
-go get "github.com/bitly/go-simplejson"
 go get "github.com/andybalholm/cascadia"
 go get "github.com/lxn/walk"
 go get "github.com/lxn/win"
