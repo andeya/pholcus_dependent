@@ -15,6 +15,7 @@ type Sheet struct {
 	MaxRow      int
 	MaxCol      int
 	Hidden      bool
+	Selected    bool
 	SheetViews  []SheetView
 	SheetFormat SheetFormat
 }
@@ -109,16 +110,24 @@ func (s *Sheet) makeXLSXSheet(refTable *RefTable, styles *xlsxStyleSheet) *xlsxW
 	maxRow := 0
 	maxCell := 0
 
+	if s.Selected {
+		worksheet.SheetViews.SheetView[0].TabSelected = true
+	}
 	if s.SheetFormat.DefaultRowHeight != 0 {
 		worksheet.SheetFormatPr.DefaultRowHeight = s.SheetFormat.DefaultRowHeight
 	}
 	worksheet.SheetFormatPr.DefaultColWidth = s.SheetFormat.DefaultColWidth
 
 	colsXfIdList := make([]int, len(s.Cols))
-	worksheet.Cols = xlsxCols{Col: []xlsxCol{}}
+	worksheet.Cols = &xlsxCols{Col: []xlsxCol{}}
 	for c, col := range s.Cols {
 		XfId := 0
-
+		if col.Min == 0 {
+			col.Min = 1
+		}
+		if col.Max == 0 {
+			col.Max = 1
+		}
 		style := col.GetStyle()
 		//col's style always not nil
 		if style != nil {
@@ -158,12 +167,12 @@ func (s *Sheet) makeXLSXSheet(refTable *RefTable, styles *xlsxStyleSheet) *xlsxW
 			XfId := colsXfIdList[c]
 
 			// generate NumFmtId and add new NumFmt
-			xNumFmt := styles.newNumFmt(cell.numFmt)
+			xNumFmt := styles.newNumFmt(cell.NumFmt)
 
 			style := cell.style
 			if style != nil {
 				XfId = handleStyleForXLSX(style, xNumFmt.NumFmtId, styles)
-			} else if len(cell.numFmt) > 0 && s.Cols[c].numFmt != cell.numFmt {
+			} else if len(cell.NumFmt) > 0 && s.Cols[c].numFmt != cell.NumFmt {
 				XfId = handleNumFmtIdForXLSX(xNumFmt.NumFmtId, styles)
 			}
 
@@ -174,7 +183,9 @@ func (s *Sheet) makeXLSXSheet(refTable *RefTable, styles *xlsxStyleSheet) *xlsxW
 			xC.R = fmt.Sprintf("%s%d", numericToLetters(c), r+1)
 			switch cell.cellType {
 			case CellTypeString:
-				xC.V = strconv.Itoa(refTable.AddString(cell.Value))
+				if len(cell.Value) > 0 {
+					xC.V = strconv.Itoa(refTable.AddString(cell.Value))
+				}
 				xC.T = "s"
 				xC.S = XfId
 			case CellTypeBool:
@@ -241,7 +252,7 @@ func handleStyleForXLSX(style *Style, NumFmtId int, styles *xlsxStyleSheet) (XfI
 
 	// HACK - adding light grey fill, as in OO and Google
 	greyfill := xlsxFill{}
-	greyfill.PatternFill.PatternType = "lightGrey"
+	greyfill.PatternFill.PatternType = "lightGray"
 	styles.addFill(greyfill)
 
 	borderId := styles.addBorder(xBorder)
@@ -271,6 +282,9 @@ func handleStyleForXLSX(style *Style, NumFmtId int, styles *xlsxStyleSheet) (XfI
 func handleNumFmtIdForXLSX(NumFmtId int, styles *xlsxStyleSheet) (XfId int) {
 	xCellXf := makeXLSXCellElement()
 	xCellXf.NumFmtId = NumFmtId
+	if xCellXf.NumFmtId > 0 {
+		xCellXf.ApplyNumberFormat = true
+	}
 	XfId = styles.addCellXf(xCellXf)
 	return
 }

@@ -2,6 +2,7 @@ package xlsx
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -39,6 +40,26 @@ func OpenFile(filename string) (file *File, err error) {
 		return nil, err
 	}
 	file, err = ReadZip(f)
+	return
+}
+
+// OpenBinary() take bytes of an XLSX file and returns a populated
+// xlsx.File struct for it.
+func OpenBinary(bs []byte) (file *File, err error) {
+	r := bytes.NewReader(bs)
+	file, err = OpenReaderAt(r, int64(r.Len()))
+	return
+}
+
+// OpenReaderAt() take io.ReaderAt of an XLSX file and returns a populated
+// xlsx.File struct for it.
+func OpenReaderAt(r io.ReaderAt, size int64) (file *File, err error) {
+	var f *zip.Reader
+	f, err = zip.NewReader(r, size)
+	if err != nil {
+		return nil, err
+	}
+	file, err = ReadZipReader(f)
 	return
 }
 
@@ -111,11 +132,17 @@ func (f *File) Write(writer io.Writer) (err error) {
 }
 
 // Add a new Sheet, with the provided name, to a File
-func (f *File) AddSheet(sheetName string) (sheet *Sheet) {
+func (f *File) AddSheet(sheetName string) (sheet *Sheet, err error) {
+	if _, exists := f.Sheet[sheetName]; exists {
+		return nil, fmt.Errorf("Duplicate sheet name '%s'.", sheetName)
+	}
 	sheet = &Sheet{Name: sheetName, File: f}
+	if len(f.Sheets) == 0 {
+		sheet.Selected = true
+	}
 	f.Sheet[sheetName] = sheet
 	f.Sheets = append(f.Sheets, sheet)
-	return sheet
+	return sheet, nil
 }
 
 func (f *File) makeWorkbook() xlsxWorkbook {
@@ -146,6 +173,24 @@ func (f *File) makeWorkbook() xlsxWorkbook {
 	workbook.CalcPr.Iterate = false
 	workbook.CalcPr.IterateDelta = 0.001
 	return workbook
+}
+
+// Some tools that read XLSX files have very strict requirements about
+// the structure of the input XML.  In particular both Numbers on the Mac
+// and SAS dislike inline XML namespace declarations, or namespace
+// prefixes that don't match the ones that Excel itself uses.  This is a
+// problem because the Go XML library doesn't multiple namespace
+// declarations in a single element of a document.  This function is a
+// horrible hack to fix that after the XML marshalling is completed.
+func replaceRelationshipsNameSpace(workbookMarshal string) string {
+	newWorkbook := strings.Replace(workbookMarshal, `xmlns:relationships="http://schemas.openxmlformats.org/officeDocument/2006/relationships" relationships:id`, `r:id`, -1)
+	// Dirty hack to fix issues #63 and #91; encoding/xml currently
+	// "doesn't allow for additional namespaces to be defined in the
+	// root element of the document," as described by @tealeg in the
+	// comments for #63.
+	oldXmlns := `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+	newXmlns := `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+	return strings.Replace(newWorkbook, oldXmlns, newXmlns, 1)
 }
 
 // Construct a map of file name to XML content representing the file
@@ -199,18 +244,15 @@ func (f *File) MarshallParts() (map[string]string, error) {
 		sheetIndex++
 	}
 
-	parts["xl/workbook.xml"], err = marshal(workbook)
+	workbookMarshal, err := marshal(workbook)
 	if err != nil {
 		return parts, err
 	}
-
-	// Make it work with Mac Numbers.
-	// Dirty hack to fix issues #63 and #91; encoding/xml currently
-	// "doesn't allow for additional namespaces to be defined in the root element of the document,"
-	// as described by @tealeg in the comments for #63.
-	oldXmlns := `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-	newXmlns := `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
-	parts["xl/workbook.xml"] = strings.Replace(parts["xl/workbook.xml"], oldXmlns, newXmlns, 1)
+	workbookMarshal = replaceRelationshipsNameSpace(workbookMarshal)
+	parts["xl/workbook.xml"] = workbookMarshal
+	if err != nil {
+		return parts, err
+	}
 
 	parts["_rels/.rels"] = TEMPLATE__RELS_DOT_RELS
 	parts["docProps/app.xml"] = TEMPLATE_DOCPROPS_APP

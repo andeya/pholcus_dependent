@@ -454,23 +454,25 @@ func readRowsFromSheet(Worksheet *xlsxWorksheet, file *File, sheet *Sheet) ([]*R
 		}
 	}
 
-	// Columns can apply to a range, for convenience we expand the
-	// ranges out into individual column definitions.
-	for _, rawcol := range Worksheet.Cols.Col {
-		// Note, below, that sometimes column definitions can
-		// exist outside the defined dimensions of the
-		// spreadsheet - we deliberately exclude these
-		// columns.
-		for i := rawcol.Min; i <= rawcol.Max && i <= colCount; i++ {
-			col := &Col{
-				Min:    rawcol.Min,
-				Max:    rawcol.Max,
-				Hidden: rawcol.Hidden,
-				Width:  rawcol.Width}
-			cols[i-1] = col
-			if file.styles != nil {
-				col.style = file.styles.getStyle(rawcol.Style)
-				col.numFmt = file.styles.getNumberFormat(rawcol.Style)
+	if Worksheet.Cols != nil {
+		// Columns can apply to a range, for convenience we expand the
+		// ranges out into individual column definitions.
+		for _, rawcol := range Worksheet.Cols.Col {
+			// Note, below, that sometimes column definitions can
+			// exist outside the defined dimensions of the
+			// spreadsheet - we deliberately exclude these
+			// columns.
+			for i := rawcol.Min; i <= rawcol.Max && i <= colCount; i++ {
+				col := &Col{
+					Min:    rawcol.Min,
+					Max:    rawcol.Max,
+					Hidden: rawcol.Hidden,
+					Width:  rawcol.Width}
+				cols[i-1] = col
+				if file.styles != nil {
+					col.style = file.styles.getStyle(rawcol.Style)
+					col.numFmt = file.styles.getNumberFormat(rawcol.Style)
+				}
 			}
 		}
 	}
@@ -487,9 +489,8 @@ func readRowsFromSheet(Worksheet *xlsxWorksheet, file *File, sheet *Sheet) ([]*R
 		// stored data
 		for rawrow.R > (insertRowIndex + 1) {
 			// Put an empty Row into the array
-			index := insertRowIndex - minRow
-			if index < numRows {
-				rows[index] = makeEmptyRow(sheet)
+			if insertRowIndex < numRows {
+				rows[insertRowIndex] = makeEmptyRow(sheet)
 			}
 			insertRowIndex++
 		}
@@ -504,6 +505,10 @@ func readRowsFromSheet(Worksheet *xlsxWorksheet, file *File, sheet *Sheet) ([]*R
 
 		insertColIndex = minCol
 		for _, rawcell := range rawrow.C {
+			h, v, err := Worksheet.MergeCells.getExtent(rawcell.R)
+			if err != nil {
+				panic(err.Error())
+			}
 			x, _, _ := getCoordsFromCellIDString(rawcell.R)
 
 			// Some spreadsheets will omit blank cells
@@ -515,10 +520,12 @@ func readRowsFromSheet(Worksheet *xlsxWorksheet, file *File, sheet *Sheet) ([]*R
 			}
 			cellX := insertColIndex
 			cell := row.Cells[cellX]
+			cell.HMerge = h
+			cell.VMerge = v
 			fillCellData(rawcell, reftable, sharedFormulas, cell)
 			if file.styles != nil {
 				cell.style = file.styles.getStyle(rawcell.S)
-				cell.numFmt = file.styles.getNumberFormat(rawcell.S)
+				cell.NumFmt = file.styles.getNumberFormat(rawcell.S)
 			}
 			cell.date1904 = file.Date1904
 			// Cell is considered hidden if the row or the column of this cell is hidden
