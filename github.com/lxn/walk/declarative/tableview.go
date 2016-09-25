@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package declarative
 
 import (
 	"github.com/lxn/walk"
+	"github.com/lxn/win"
 )
 
 type TableView struct {
@@ -39,14 +42,21 @@ type TableView struct {
 	LastColumnStretched        bool
 	ColumnsOrderable           Property
 	ColumnsSizable             Property
-	SingleItemSelection        bool
+	MultiSelection             bool
+	NotSortableByHeaderClick   bool
 	OnCurrentIndexChanged      walk.EventHandler
 	OnSelectedIndexesChanged   walk.EventHandler
 	OnItemActivated            walk.EventHandler
 }
 
 func (tv TableView) Create(builder *Builder) error {
-	w, err := walk.NewTableView(builder.Parent())
+	var w *walk.TableView
+	var err error
+	if tv.NotSortableByHeaderClick {
+		w, err = walk.NewTableViewWithStyle(builder.Parent(), win.LVS_NOSORTHEADER)
+	} else {
+		w, err = walk.NewTableView(builder.Parent())
+	}
 	if err != nil {
 		return err
 	}
@@ -70,7 +80,7 @@ func (tv TableView) Create(builder *Builder) error {
 		if err := w.SetLastColumnStretched(tv.LastColumnStretched); err != nil {
 			return err
 		}
-		if err := w.SetSingleItemSelection(tv.SingleItemSelection); err != nil {
+		if err := w.SetMultiSelection(tv.MultiSelection); err != nil {
 			return err
 		}
 

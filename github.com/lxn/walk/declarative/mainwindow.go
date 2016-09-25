@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package declarative
 
 import (
@@ -23,6 +25,7 @@ type MainWindow struct {
 	OnMouseDown      walk.MouseEventHandler
 	OnMouseMove      walk.MouseEventHandler
 	OnMouseUp        walk.MouseEventHandler
+	OnDropFiles      walk.DropFilesEventHandler
 	OnSizeChanged    walk.EventHandler
 	Title            string
 	Size             Size
@@ -30,7 +33,8 @@ type MainWindow struct {
 	Layout           Layout
 	Children         []Widget
 	MenuItems        []MenuItem
-	ToolBarItems     []MenuItem
+	ToolBarItems     []MenuItem // Deprecated, use ToolBar instead
+	ToolBar          ToolBar
 }
 
 func (mw MainWindow) Create() error {
@@ -67,9 +71,25 @@ func (mw MainWindow) Create() error {
 	})
 
 	builder.deferBuildMenuActions(w.Menu(), mw.MenuItems)
-	builder.deferBuildActions(w.ToolBar().Actions(), mw.ToolBarItems)
 
 	return builder.InitWidget(tlwi, w, func() error {
+		if len(mw.ToolBar.Items) > 0 {
+			var tb *walk.ToolBar
+			if mw.ToolBar.AssignTo == nil {
+				mw.ToolBar.AssignTo = &tb
+			}
+
+			if err := mw.ToolBar.Create(builder); err != nil {
+				return err
+			}
+
+			old := w.ToolBar()
+			w.SetToolBar(*mw.ToolBar.AssignTo)
+			old.Dispose()
+		} else {
+			builder.deferBuildActions(w.ToolBar().Actions(), mw.ToolBarItems)
+		}
+
 		if err := w.SetTitle(mw.Title); err != nil {
 			return err
 		}
@@ -84,12 +104,18 @@ func (mw MainWindow) Create() error {
 		}
 		w.ToolBar().SetImageList(imageList)
 
+		if mw.OnDropFiles != nil {
+			w.DropFiles().Attach(mw.OnDropFiles)
+		}
+
 		if mw.AssignTo != nil {
 			*mw.AssignTo = w
 		}
 
 		builder.Defer(func() error {
-			w.Show()
+			if mw.Visible != false {
+				w.Show()
+			}
 
 			return nil
 		})

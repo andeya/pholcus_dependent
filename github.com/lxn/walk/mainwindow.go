@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -50,20 +52,18 @@ func NewMainWindow() (*MainWindow, error) {
 
 	var err error
 
-	if mw.menu, err = newMenuBar(); err != nil {
+	if mw.menu, err = newMenuBar(mw.hWnd); err != nil {
 		return nil, err
 	}
 	if !win.SetMenu(mw.hWnd, mw.menu.hMenu) {
 		return nil, lastError("SetMenu")
 	}
 
-	if mw.toolBar, err = NewToolBar(mw); err != nil {
+	tb, err := NewToolBar(mw)
+	if err != nil {
 		return nil, err
 	}
-	mw.toolBar.parent = nil
-	mw.Children().Remove(mw.toolBar)
-	mw.toolBar.parent = mw
-	win.SetParent(mw.toolBar.hWnd, mw.hWnd)
+	mw.SetToolBar(tb)
 
 	if mw.statusBar, err = NewStatusBar(mw); err != nil {
 		return nil, err
@@ -72,6 +72,9 @@ func NewMainWindow() (*MainWindow, error) {
 	mw.Children().Remove(mw.statusBar)
 	mw.statusBar.parent = mw
 	win.SetParent(mw.statusBar.hWnd, mw.hWnd)
+	mw.statusBar.visibleChangedPublisher.event.Attach(func() {
+		mw.SetBounds(mw.Bounds())
+	})
 
 	// This forces display of focus rectangles, as soon as the user starts to type.
 	mw.SendMessage(win.WM_CHANGEUISTATE, win.UIS_INITIALIZE, 0)
@@ -89,6 +92,22 @@ func (mw *MainWindow) ToolBar() *ToolBar {
 	return mw.toolBar
 }
 
+func (mw *MainWindow) SetToolBar(tb *ToolBar) {
+	if mw.toolBar != nil {
+		win.SetParent(mw.toolBar.hWnd, 0)
+	}
+
+	if tb != nil {
+		parent := tb.parent
+		tb.parent = nil
+		parent.Children().Remove(tb)
+		tb.parent = mw
+		win.SetParent(tb.hWnd, mw.hWnd)
+	}
+
+	mw.toolBar = tb
+}
+
 func (mw *MainWindow) StatusBar() *StatusBar {
 	return mw.statusBar
 }
@@ -96,7 +115,7 @@ func (mw *MainWindow) StatusBar() *StatusBar {
 func (mw *MainWindow) ClientBounds() Rectangle {
 	bounds := mw.FormBase.ClientBounds()
 
-	if mw.toolBar.Actions().Len() > 0 {
+	if mw.toolBar != nil && mw.toolBar.Actions().Len() > 0 {
 		tlbBounds := mw.toolBar.Bounds()
 
 		bounds.Y += tlbBounds.Height
@@ -120,6 +139,18 @@ func (mw *MainWindow) SetVisible(visible bool) {
 	}
 
 	mw.FormBase.SetVisible(visible)
+}
+
+func (mw *MainWindow) applyFont(font *Font) {
+	mw.FormBase.applyFont(font)
+
+	if mw.toolBar != nil {
+		mw.toolBar.applyFont(font)
+	}
+
+	if mw.statusBar != nil {
+		mw.statusBar.applyFont(font)
+	}
 }
 
 func (mw *MainWindow) Fullscreen() bool {
@@ -183,8 +214,11 @@ func (mw *MainWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 	case win.WM_SIZE, win.WM_SIZING:
 		cb := mw.ClientBounds()
 
-		mw.toolBar.SetBounds(Rectangle{0, 0, cb.Width, mw.toolBar.Height()})
-		mw.statusBar.SetBounds(Rectangle{0, cb.Height, cb.Width, mw.statusBar.Height()})
+		if mw.toolBar != nil {
+			mw.toolBar.SetBounds(Rectangle{0, 0, cb.Width, mw.toolBar.Height()})
+		}
+
+		mw.statusBar.SetBounds(Rectangle{0, cb.Y + cb.Height, cb.Width, mw.statusBar.Height()})
 	}
 
 	return mw.FormBase.WndProc(hwnd, msg, wParam, lParam)

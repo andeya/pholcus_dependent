@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package win
 
 import (
@@ -10,6 +12,7 @@ import (
 )
 
 type CSIDL uint32
+type HDROP HANDLE
 
 const (
 	CSIDL_DESKTOP                 = 0x00
@@ -175,10 +178,14 @@ var (
 	libshell32 uintptr
 
 	// Functions
+	dragAcceptFiles        uintptr
+	dragFinish             uintptr
+	dragQueryFile          uintptr
 	shBrowseForFolder      uintptr
 	shGetFileInfo          uintptr
 	shGetPathFromIDList    uintptr
 	shGetSpecialFolderPath uintptr
+	shParseDisplayName     uintptr
 	shell_NotifyIcon       uintptr
 )
 
@@ -187,11 +194,43 @@ func init() {
 	libshell32 = MustLoadLibrary("shell32.dll")
 
 	// Functions
+	dragAcceptFiles = MustGetProcAddress(libshell32, "DragAcceptFiles")
+	dragFinish = MustGetProcAddress(libshell32, "DragFinish")
+	dragQueryFile = MustGetProcAddress(libshell32, "DragQueryFileW")
 	shBrowseForFolder = MustGetProcAddress(libshell32, "SHBrowseForFolderW")
 	shGetFileInfo = MustGetProcAddress(libshell32, "SHGetFileInfoW")
 	shGetPathFromIDList = MustGetProcAddress(libshell32, "SHGetPathFromIDListW")
 	shGetSpecialFolderPath = MustGetProcAddress(libshell32, "SHGetSpecialFolderPathW")
+	shParseDisplayName = MustGetProcAddress(libshell32, "SHParseDisplayName")
 	shell_NotifyIcon = MustGetProcAddress(libshell32, "Shell_NotifyIconW")
+}
+
+func DragAcceptFiles(hWnd HWND, fAccept bool) bool {
+	ret, _, _ := syscall.Syscall(dragAcceptFiles, 2,
+		uintptr(hWnd),
+		uintptr(BoolToBOOL(fAccept)),
+		0)
+
+	return ret != 0
+}
+
+func DragQueryFile(hDrop HDROP, iFile uint, lpszFile *uint16, cch uint) uint {
+	ret, _, _ := syscall.Syscall6(dragQueryFile, 4,
+		uintptr(hDrop),
+		uintptr(iFile),
+		uintptr(unsafe.Pointer(lpszFile)),
+		uintptr(cch),
+		0,
+		0)
+
+	return uint(ret)
+}
+
+func DragFinish(hDrop HDROP) {
+	syscall.Syscall(dragAcceptFiles, 1,
+		uintptr(hDrop),
+		0,
+		0)
 }
 
 func SHBrowseForFolder(lpbi *BROWSEINFO) uintptr {
@@ -234,6 +273,18 @@ func SHGetSpecialFolderPath(hwndOwner HWND, lpszPath *uint16, csidl CSIDL, fCrea
 		0)
 
 	return ret != 0
+}
+
+func SHParseDisplayName(pszName *uint16, pbc uintptr, ppidl *uintptr, sfgaoIn uint32, psfgaoOut *uint32) HRESULT {
+	ret, _, _ := syscall.Syscall6(shParseDisplayName, 5,
+		uintptr(unsafe.Pointer(pszName)),
+		pbc,
+		uintptr(unsafe.Pointer(ppidl)),
+		0,
+		uintptr(unsafe.Pointer(psfgaoOut)),
+		0)
+
+	return HRESULT(ret)
 }
 
 func Shell_NotifyIcon(dwMessage uint32, lpdata *NOTIFYICONDATA) bool {

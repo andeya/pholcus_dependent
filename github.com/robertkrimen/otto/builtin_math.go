@@ -117,13 +117,7 @@ func builtinMath_pow(call FunctionCall) Value {
 }
 
 func builtinMath_random(call FunctionCall) Value {
-	var v float64
-	if call.runtime.random != nil {
-		v = call.runtime.random()
-	} else {
-		v = rand.Float64()
-	}
-	return toValue_float64(v)
+	return toValue_float64(rand.Float64())
 }
 
 func builtinMath_round(call FunctionCall) Value {

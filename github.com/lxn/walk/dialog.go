@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -49,6 +51,14 @@ type Dialog struct {
 }
 
 func NewDialog(owner Form) (*Dialog, error) {
+	return newDialogWithStyle(owner, win.WS_THICKFRAME)
+}
+
+func NewDialogWithFixedSize(owner Form) (*Dialog, error) {
+	return newDialogWithStyle(owner, 0)
+}
+
+func newDialogWithStyle(owner Form, style uint32) (*Dialog, error) {
 	dlg := &Dialog{
 		FormBase: FormBase{
 			owner: owner,
@@ -59,8 +69,8 @@ func NewDialog(owner Form) (*Dialog, error) {
 		dlg,
 		owner,
 		dialogWindowClass,
-		win.WS_CAPTION|win.WS_SYSMENU|win.WS_THICKFRAME,
-		win.WS_EX_DLGMODALFRAME); err != nil {
+		win.WS_CAPTION|win.WS_SYSMENU|style,
+		0); err != nil {
 		return nil, err
 	}
 
@@ -212,12 +222,12 @@ func (dlg *Dialog) Show() {
 		ob := dlg.owner.Bounds()
 
 		if dlg.centerInOwnerWhenRun {
-			dlg.SetBounds(Rectangle{
+			dlg.SetBounds(fitRectToScreen(dlg.hWnd, Rectangle{
 				ob.X + (ob.Width-size.Width)/2,
 				ob.Y + (ob.Height-size.Height)/2,
 				size.Width,
 				size.Height,
-			})
+			}))
 		}
 	} else {
 		dlg.SetBounds(dlg.Bounds())
@@ -226,6 +236,41 @@ func (dlg *Dialog) Show() {
 	dlg.FormBase.Show()
 
 	dlg.focusFirstCandidateDescendant()
+}
+
+func fitRectToScreen(hWnd win.HWND, r Rectangle) Rectangle {
+	var mi win.MONITORINFO
+	mi.CbSize = uint32(unsafe.Sizeof(mi))
+
+	if !win.GetMonitorInfo(win.MonitorFromWindow(
+		hWnd, win.MONITOR_DEFAULTTOPRIMARY), &mi) {
+
+		return r
+	}
+
+	mon := rectangleFromRECT(mi.RcWork)
+
+	mon.Height -= int(win.GetSystemMetrics(win.SM_CYCAPTION))
+
+	if r.Width <= mon.Width {
+		switch {
+		case r.X < mon.X:
+			r.X = mon.X
+		case r.X+r.Width > mon.X+mon.Width:
+			r.X = mon.X + mon.Width - r.Width
+		}
+	}
+
+	if r.Height <= mon.Height {
+		switch {
+		case r.Y < mon.Y:
+			r.Y = mon.Y
+		case r.Y+r.Height > mon.Y+mon.Height:
+			r.Y = mon.Y + mon.Height - r.Height
+		}
+	}
+
+	return r
 }
 
 func (dlg *Dialog) Run() int {

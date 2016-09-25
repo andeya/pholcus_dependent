@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -348,7 +350,7 @@ func (l *GridLayout) LayoutFlags() LayoutFlags {
 }
 
 func (l *GridLayout) MinSize() Size {
-	if l.container == nil {
+	if l.container == nil || len(l.cells) == 0 {
 		return Size{}
 	}
 
@@ -473,14 +475,22 @@ func (l *GridLayout) Update(reset bool) error {
 	}
 
 	for widget, info := range l.widget2Info {
+		if !shouldLayoutWidget(widget) {
+			continue
+		}
+
 		x := l.margins.HNear
 		for i := 0; i < info.cell.column; i++ {
-			x += widths[i] + l.spacing
+			if w := widths[i]; w > 0 {
+				x += w + l.spacing
+			}
 		}
 
 		y := l.margins.VNear
 		for i := 0; i < info.cell.row; i++ {
-			y += heights[i] + l.spacing
+			if h := heights[i]; h > 0 {
+				y += h + l.spacing
+			}
 		}
 
 		w := 0
@@ -637,7 +647,7 @@ func (l *GridLayout) sectionSizes(orientation Orientation) []int {
 		}
 	}
 
-	sort.Sort(sortedSections)
+	sort.Stable(sortedSections)
 
 	cb := l.container.ClientBounds()
 	var space int
@@ -647,7 +657,15 @@ func (l *GridLayout) sectionSizes(orientation Orientation) []int {
 		space = cb.Height - l.margins.VNear - l.margins.VFar
 	}
 
-	spacingRemaining := l.spacing * (len(stretchFactors) - 1)
+	var spacingRemaining int
+	for _, max := range maxSizes {
+		if max > 0 {
+			spacingRemaining += l.spacing
+		}
+	}
+	if spacingRemaining > 0 {
+		spacingRemaining -= l.spacing
+	}
 
 	offsets := [3]int{0, sectionCountWithGreedyNonSpacer, sectionCountWithGreedyNonSpacer + sectionCountWithGreedySpacer}
 	counts := [3]int{sectionCountWithGreedyNonSpacer, sectionCountWithGreedySpacer, len(stretchFactors) - sectionCountWithGreedyNonSpacer - sectionCountWithGreedySpacer}
@@ -679,6 +697,7 @@ func (l *GridLayout) sectionSizes(orientation Orientation) []int {
 
 			minSizesRemaining -= min
 			stretchFactorsRemaining -= stretch
+
 			space -= (size + l.spacing)
 			spacingRemaining -= l.spacing
 		}

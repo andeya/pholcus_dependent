@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -184,12 +186,16 @@ func newComboBoxWithStyle(parent Container, style uint32) (*ComboBox, error) {
 	return cb, nil
 }
 
-func (*ComboBox) LayoutFlags() LayoutFlags {
+func (cb *ComboBox) LayoutFlags() LayoutFlags {
+	if cb.Editable() {
+		return GrowableHorz | GreedyHorz
+	}
+
 	return GrowableHorz
 }
 
 func (cb *ComboBox) MinSizeHint() Size {
-	defaultSize := cb.dialogBaseUnitsToPixels(Size{50, 12})
+	defaultSize := cb.dialogBaseUnitsToPixels(Size{30, 12})
 
 	if cb.model != nil && cb.maxItemTextWidth <= 0 {
 		cb.maxItemTextWidth = cb.calculateMaxItemTextWidth()
@@ -204,6 +210,15 @@ func (cb *ComboBox) MinSizeHint() Size {
 
 func (cb *ComboBox) SizeHint() Size {
 	return cb.MinSizeHint()
+}
+
+func (cb *ComboBox) applyFont(font *Font) {
+	cb.WidgetBase.applyFont(font)
+
+	if cb.model != nil {
+		cb.maxItemTextWidth = cb.calculateMaxItemTextWidth()
+		cb.updateParentLayout()
+	}
 }
 
 func (cb *ComboBox) Editable() bool {
@@ -538,7 +553,6 @@ func (cb *ComboBox) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 		case win.CBN_EDITCHANGE:
 			cb.selChangeIndex = -1
 			cb.textChangedPublisher.Publish()
-			cb.currentIndexChangedPublisher.Publish()
 
 		case win.CBN_SELCHANGE:
 			cb.selChangeIndex = selIndex
@@ -568,6 +582,15 @@ func (cb *ComboBox) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 	case win.WM_MOUSEWHEEL:
 		if !cb.Enabled() {
 			return 0
+		}
+
+	case win.WM_SIZE:
+		if cb.Editable() {
+			result := cb.WidgetBase.WndProc(hwnd, msg, wParam, lParam)
+
+			cb.SetTextSelection(0, 0)
+
+			return result
 		}
 	}
 

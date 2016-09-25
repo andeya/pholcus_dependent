@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -74,6 +76,14 @@ func (te *TextEdit) TextLength() int {
 
 func (te *TextEdit) SetText(value string) error {
 	return setWindowText(te.hWnd, value)
+}
+
+func (te *TextEdit) MaxLength() int {
+	return int(te.SendMessage(win.EM_GETLIMITTEXT, 0, 0))
+}
+
+func (te *TextEdit) SetMaxLength(value int) {
+	te.SendMessage(win.EM_SETLIMITTEXT, uintptr(value), 0)
 }
 
 func (te *TextEdit) TextSelection() (start, end int) {

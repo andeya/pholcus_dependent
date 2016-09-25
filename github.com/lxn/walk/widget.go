@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -187,6 +189,12 @@ func (wb *WidgetBase) Font() *Font {
 	}
 
 	return defaultFont
+}
+
+func (wb *WidgetBase) applyFont(font *Font) {
+	wb.WindowBase.applyFont(font)
+
+	wb.updateParentLayout()
 }
 
 // Form returns the root ancestor Form of the Widget.

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -244,6 +246,25 @@ func (c *Canvas) DrawLine(pen Pen, from, to Point) error {
 	return c.withPen(pen, func() error {
 		if !win.LineTo(c.hdc, int32(to.X), int32(to.Y)) {
 			return newError("LineTo failed")
+		}
+
+		return nil
+	})
+}
+
+func (c *Canvas) DrawPolyline(pen Pen, points []Point) error {
+	if len(points) < 1 {
+		return nil
+	}
+
+	pts := make([]win.POINT, len(points))
+	for i := range points {
+		pts[i] = win.POINT{X: int32(points[i].X), Y: int32(points[i].Y)}
+	}
+
+	return c.withPen(pen, func() error {
+		if !win.Polyline(c.hdc, unsafe.Pointer(&pts[0].X), int32(len(pts))) {
+			return newError("Polyline failed")
 		}
 
 		return nil

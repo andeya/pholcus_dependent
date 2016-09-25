@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -150,6 +152,18 @@ func (fb *FormBase) SetSuspended(suspended bool) {
 	fb.clientComposite.SetSuspended(suspended)
 }
 
+func (fb *FormBase) MouseDown() *MouseEvent {
+	return fb.clientComposite.MouseDown()
+}
+
+func (fb *FormBase) MouseMove() *MouseEvent {
+	return fb.clientComposite.MouseMove()
+}
+
+func (fb *FormBase) MouseUp() *MouseEvent {
+	return fb.clientComposite.MouseUp()
+}
+
 func (fb *FormBase) onInsertingWidget(index int, widget Widget) error {
 	return fb.clientComposite.onInsertingWidget(index, widget)
 }
@@ -194,28 +208,16 @@ func (fb *FormBase) SetContextMenu(contextMenu *Menu) {
 	fb.clientComposite.SetContextMenu(contextMenu)
 }
 
-func (fb *FormBase) Enabled() bool {
-	return fb.enabled
+func (fb *FormBase) applyEnabled(enabled bool) {
+	fb.WindowBase.applyEnabled(enabled)
+
+	fb.clientComposite.applyEnabled(enabled)
 }
 
-func (fb *FormBase) SetEnabled(enabled bool) {
-	fb.WindowBase.SetEnabled(enabled)
-}
+func (fb *FormBase) applyFont(font *Font) {
+	fb.WindowBase.applyFont(font)
 
-func (fb *FormBase) Font() *Font {
-	if fb.font != nil {
-		return fb.font
-	}
-
-	return defaultFont
-}
-
-func (fb *FormBase) SetFont(value *Font) {
-	if value != fb.font {
-		fb.WindowBase.SetFont(value)
-
-		fb.clientComposite.SetFont(value)
-	}
+	fb.clientComposite.applyFont(font)
 }
 
 func (fb *FormBase) Title() string {

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package win
 
 import (
@@ -65,6 +67,7 @@ var (
 	getModuleHandle        uintptr
 	getNumberFormat        uintptr
 	getThreadLocale        uintptr
+	getThreadUILanguage    uintptr
 	getVersion             uintptr
 	globalAlloc            uintptr
 	globalFree             uintptr
@@ -84,6 +87,7 @@ type (
 	HINSTANCE HANDLE
 	LCID      uint32
 	LCTYPE    uint32
+	LANGID    uint16
 )
 
 type FILETIME struct {
@@ -127,6 +131,7 @@ func init() {
 	getNumberFormat = MustGetProcAddress(libkernel32, "GetNumberFormatW")
 	getProfileString = MustGetProcAddress(libkernel32, "GetProfileStringW")
 	getThreadLocale = MustGetProcAddress(libkernel32, "GetThreadLocale")
+	getThreadUILanguage, _ = syscall.GetProcAddress(syscall.Handle(libkernel32), "GetThreadUILanguage")
 	getVersion = MustGetProcAddress(libkernel32, "GetVersion")
 	globalAlloc = MustGetProcAddress(libkernel32, "GlobalAlloc")
 	globalFree = MustGetProcAddress(libkernel32, "GlobalFree")
@@ -244,6 +249,19 @@ func GetThreadLocale() LCID {
 		0)
 
 	return LCID(ret)
+}
+
+func GetThreadUILanguage() LANGID {
+	if getThreadUILanguage == 0 {
+		return 0
+	}
+
+	ret, _, _ := syscall.Syscall(getThreadUILanguage, 0,
+		0,
+		0,
+		0)
+
+	return LANGID(ret)
 }
 
 func GetVersion() int64 {

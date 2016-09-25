@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -111,6 +113,24 @@ func (lep *LineErrorPresenter) MinSizeHint() Size {
 
 func (lep *LineErrorPresenter) SizeHint() Size {
 	return lep.MinSizeHint()
+}
+
+func (lep *LineErrorPresenter) applyEnabled(enabled bool) {
+	lep.WidgetBase.applyEnabled(enabled)
+
+	lep.composite.applyEnabled(enabled)
+}
+
+func (lep *LineErrorPresenter) applyFont(font *Font) {
+	lep.WidgetBase.applyFont(font)
+
+	if lep.composite == nil {
+		return
+	}
+
+	// We have to call SetFont instead of applyFont here, because
+	// LineErrorPresenter does not implement Container.
+	lep.composite.SetFont(font)
 }
 
 func (lep *LineErrorPresenter) PresentError(err error, widget Widget) {

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package declarative
 
 import (
@@ -31,10 +33,19 @@ type Dialog struct {
 	Children         []Widget
 	DefaultButton    **walk.PushButton
 	CancelButton     **walk.PushButton
+	FixedSize        bool
 }
 
 func (d Dialog) Create(owner walk.Form) error {
-	w, err := walk.NewDialog(owner)
+	var w *walk.Dialog
+	var err error
+
+	if d.FixedSize {
+		w, err = walk.NewDialogWithFixedSize(owner)
+	} else {
+		w, err = walk.NewDialog(owner)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -86,7 +97,9 @@ func (d Dialog) Create(owner walk.Form) error {
 			}
 
 			if db := *d.DataBinder.AssignTo; db != nil {
-				(*d.DefaultButton).SetEnabled(db.CanSubmit())
+				if db.DataSource() != nil {
+					(*d.DefaultButton).SetEnabled(db.CanSubmit())
+				}
 
 				db.CanSubmitChanged().Attach(func() {
 					(*d.DefaultButton).SetEnabled(db.CanSubmit())

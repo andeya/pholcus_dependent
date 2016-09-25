@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -52,7 +54,7 @@ func (m *mapTableModel) Value(row, col int) interface{} {
 func (m *mapTableModel) Sort(col int, order SortOrder) error {
 	m.col, m.order = col, order
 
-	sort.Sort(m)
+	sort.Stable(m)
 
 	m.changedPublisher.Publish()
 

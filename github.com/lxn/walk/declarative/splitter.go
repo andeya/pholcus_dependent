@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package declarative
 
 import (
@@ -41,6 +43,12 @@ func (s HSplitter) Create(builder *Builder) error {
 	if err != nil {
 		return err
 	}
+
+	w.SetSuspended(true)
+	builder.Defer(func() error {
+		w.SetSuspended(false)
+		return nil
+	})
 
 	return builder.InitWidget(s, w, func() error {
 		if s.HandleWidth > 0 {

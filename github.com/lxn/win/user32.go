@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package win
 
 import (
@@ -125,6 +127,7 @@ const (
 
 // Button notifications
 const (
+	BCN_DROPDOWN     = 0xfffffb20
 	BN_CLICKED       = 0
 	BN_PAINT         = 1
 	BN_HILITE        = 2
@@ -185,6 +188,7 @@ const (
 	BS_RADIOBUTTON     = 4
 	BS_RIGHT           = 512
 	BS_RIGHTBUTTON     = 32
+	BS_SPLITBUTTON     = 0x0000000c
 	BS_TEXT            = 0
 	BS_TOP             = 0X400
 	BS_USERBUTTON      = 8
@@ -868,6 +872,7 @@ const (
 	WM_MOUSELAST              = 525
 	WM_MOUSEHOVER             = 0X2A1
 	WM_MOUSELEAVE             = 0X2A3
+	WM_CLIPBOARDUPDATE        = 0x031D
 )
 
 // mouse button constants
@@ -1217,6 +1222,11 @@ const (
 	DI_NORMAL      = DI_IMAGE | DI_MASK
 )
 
+type NMBCDROPDOWN struct {
+	Hdr      NMHDR
+	RcButton RECT
+}
+
 type MONITORINFO struct {
 	CbSize    uint32
 	RcMonitor RECT
@@ -1483,6 +1493,7 @@ var (
 	libuser32 uintptr
 
 	// Functions
+	addClipboardFormatListener uintptr
 	adjustWindowRect           uintptr
 	beginDeferWindowPos        uintptr
 	beginPaint                 uintptr
@@ -1599,6 +1610,7 @@ func init() {
 	libuser32 = MustLoadLibrary("user32.dll")
 
 	// Functions
+	addClipboardFormatListener, _ = syscall.GetProcAddress(syscall.Handle(libuser32), "AddClipboardFormatListener")
 	adjustWindowRect = MustGetProcAddress(libuser32, "AdjustWindowRect")
 	beginDeferWindowPos = MustGetProcAddress(libuser32, "BeginDeferWindowPos")
 	beginPaint = MustGetProcAddress(libuser32, "BeginPaint")
@@ -1716,6 +1728,19 @@ func init() {
 	translateMessage = MustGetProcAddress(libuser32, "TranslateMessage")
 	updateWindow = MustGetProcAddress(libuser32, "UpdateWindow")
 	windowFromPoint = MustGetProcAddress(libuser32, "WindowFromPoint")
+}
+
+func AddClipboardFormatListener(hwnd HWND) bool {
+	if addClipboardFormatListener == 0 {
+		return false
+	}
+
+	ret, _, _ := syscall.Syscall(addClipboardFormatListener, 1,
+		uintptr(hwnd),
+		0,
+		0)
+
+	return ret != 0
 }
 
 func AdjustWindowRect(lpRect *RECT, dwStyle uint32, bMenu bool) bool {

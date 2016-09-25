@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -121,6 +123,18 @@ func (sv *ScrollView) SaveState() error {
 
 func (sv *ScrollView) RestoreState() error {
 	return sv.composite.RestoreState()
+}
+
+func (sv *ScrollView) MouseDown() *MouseEvent {
+	return sv.composite.MouseDown()
+}
+
+func (sv *ScrollView) MouseMove() *MouseEvent {
+	return sv.composite.MouseMove()
+}
+
+func (sv *ScrollView) MouseUp() *MouseEvent {
+	return sv.composite.MouseUp()
 }
 
 func (sv *ScrollView) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {

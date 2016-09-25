@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package declarative
 
 import (
@@ -46,7 +48,7 @@ func (tb ToolButton) Create(builder *Builder) error {
 		img := tb.Image
 		if s, ok := img.(string); ok {
 			var err error
-			if img, err = walk.NewImageFromFile(s); err != nil {
+			if img, err = imageFromFile(s); err != nil {
 				return err
 			}
 		}

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package declarative
 
 import (
@@ -34,6 +36,7 @@ type TreeView struct {
 	Model                walk.TreeModel
 	OnCurrentItemChanged walk.EventHandler
 	OnExpandedChanged    walk.TreeItemEventHandler
+	OnItemActivated      walk.EventHandler
 }
 
 func (tv TreeView) Create(builder *Builder) error {
@@ -53,6 +56,10 @@ func (tv TreeView) Create(builder *Builder) error {
 
 		if tv.OnExpandedChanged != nil {
 			w.ExpandedChanged().Attach(tv.OnExpandedChanged)
+		}
+
+		if tv.OnItemActivated != nil {
+			w.ItemActivated().Attach(tv.OnItemActivated)
 		}
 
 		if tv.AssignTo != nil {

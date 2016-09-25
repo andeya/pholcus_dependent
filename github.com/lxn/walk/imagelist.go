@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -22,7 +24,7 @@ func NewImageList(imageSize Size, maskColor Color) (*ImageList, error) {
 	hIml := win.ImageList_Create(
 		int32(imageSize.Width),
 		int32(imageSize.Height),
-		win.ILC_MASK|win.ILC_COLOR24,
+		win.ILC_MASK|win.ILC_COLOR32,
 		8,
 		8)
 	if hIml == 0 {
@@ -30,6 +32,10 @@ func NewImageList(imageSize Size, maskColor Color) (*ImageList, error) {
 	}
 
 	return &ImageList{hIml: hIml, maskColor: maskColor}, nil
+}
+
+func (il *ImageList) Handle() win.HIMAGELIST {
+	return il.hIml
 }
 
 func (il *ImageList) Add(bitmap, maskBitmap *Bitmap) (int, error) {
@@ -84,7 +90,7 @@ func imageListForImage(image interface{}) (hIml win.HIMAGELIST, isSysIml bool, e
 	} else {
 		w, h := win.GetSystemMetrics(win.SM_CXSMICON), win.GetSystemMetrics(win.SM_CYSMICON)
 
-		hIml = win.ImageList_Create(w, h, win.ILC_MASK|win.ILC_COLOR24, 8, 8)
+		hIml = win.ImageList_Create(w, h, win.ILC_MASK|win.ILC_COLOR32, 8, 8)
 		if hIml == 0 {
 			return 0, false, newError("ImageList_Create failed")
 		}

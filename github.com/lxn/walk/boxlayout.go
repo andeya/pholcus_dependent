@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -408,7 +410,7 @@ func (l *BoxLayout) Update(reset bool) error {
 		}
 	}
 
-	sort.Sort(sortedWidgetInfo)
+	sort.Stable(sortedWidgetInfo)
 
 	cb := l.container.ClientBounds()
 	var start1, start2, space1, space2 int

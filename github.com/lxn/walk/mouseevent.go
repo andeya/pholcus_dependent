@@ -2,14 +2,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
+
+import (
+	"github.com/lxn/win"
+)
 
 type MouseButton int
 
 const (
-	LeftButton MouseButton = iota
-	RightButton
-	MiddleButton
+	LeftButton   MouseButton = win.MK_LBUTTON
+	RightButton  MouseButton = win.MK_RBUTTON
+	MiddleButton MouseButton = win.MK_MBUTTON
 )
 
 type MouseEventHandler func(x, y int, button MouseButton)
@@ -48,4 +54,12 @@ func (p *MouseEventPublisher) Publish(x, y int, button MouseButton) {
 			handler(x, y, button)
 		}
 	}
+}
+
+func MouseWheelEventDelta(button MouseButton) int {
+	return int(int32(button) >> 16)
+}
+
+func MouseWheelEventKeyState(button MouseButton) int {
+	return int(int32(button) & 0xFFFF)
 }

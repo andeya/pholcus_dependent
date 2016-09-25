@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
 	"bytes"
 	"fmt"
+	"image"
+	"image/color"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -24,6 +28,10 @@ const (
 
 // Window is an interface that provides operations common to all windows.
 type Window interface {
+	// AddDisposable adds a Disposable resource that should be disposed of
+	// together with this Window.
+	AddDisposable(d Disposable)
+
 	// AsWindowBase returns a *WindowBase, a pointer to an instance of the
 	// struct that implements most operations common to all windows.
 	AsWindowBase() *WindowBase
@@ -73,8 +81,19 @@ type Window interface {
 	// as well.
 	Dispose()
 
+	// Disposing returns an Event that is published when the Window is disposed
+	// of.
+	Disposing() *Event
+
 	// Enabled returns if the Window is enabled for user interaction.
 	Enabled() bool
+
+	// Focused returns whether the Window has the keyboard input focus.
+	Focused() bool
+
+	// FocusedChanged returns an Event that you can attach to for handling focus
+	// changed events for the Window.
+	FocusedChanged() *Event
 
 	// Font returns the *Font of the Window.
 	//
@@ -133,6 +152,9 @@ type Window interface {
 
 	// Name returns the name of the Window.
 	Name() string
+
+	// Screenshot returns an image of the window.
+	Screenshot() (*image.RGBA, error)
 
 	// SendMessage sends a message to the window and returns the result.
 	SendMessage(msg uint32, wParam, lParam uintptr) uintptr
@@ -256,12 +278,16 @@ type WindowBase struct {
 	name                    string
 	font                    *Font
 	contextMenu             *Menu
+	disposables             []Disposable
+	disposingPublisher      EventPublisher
+	dropFilesPublisher      DropFilesEventPublisher
 	keyDownPublisher        KeyEventPublisher
 	keyPressPublisher       KeyEventPublisher
 	keyUpPublisher          KeyEventPublisher
 	mouseDownPublisher      MouseEventPublisher
 	mouseUpPublisher        MouseEventPublisher
 	mouseMovePublisher      MouseEventPublisher
+	mouseWheelPublisher     MouseEventPublisher
 	sizeChangedPublisher    EventPublisher
 	maxSize                 Size
 	minSize                 Size
@@ -275,6 +301,8 @@ type WindowBase struct {
 	enabledChangedPublisher EventPublisher
 	visibleProperty         Property
 	visibleChangedPublisher EventPublisher
+	focusedProperty         Property
+	focusedChangedPublisher EventPublisher
 }
 
 var (
@@ -423,8 +451,15 @@ func InitWindow(window, parent Window, className string, style, exStyle uint32) 
 		},
 		wb.visibleChangedPublisher.Event())
 
+	wb.focusedProperty = NewReadOnlyBoolProperty(
+		func() bool {
+			return wb.Focused()
+		},
+		wb.focusedChangedPublisher.Event())
+
 	wb.MustRegisterProperty("Enabled", wb.enabledProperty)
 	wb.MustRegisterProperty("Visible", wb.visibleProperty)
+	wb.MustRegisterProperty("Focused", wb.focusedProperty)
 
 	succeeded = true
 
@@ -474,8 +509,8 @@ func (wb *WindowBase) Property(name string) Property {
 	return wb.name2Property[name]
 }
 
-func (wb *WindowBase) hasStyleBits(bits uint) bool {
-	style := uint(win.GetWindowLong(wb.hWnd, win.GWL_STYLE))
+func (wb *WindowBase) hasStyleBits(bits uint32) bool {
+	style := uint32(win.GetWindowLong(wb.hWnd, win.GWL_STYLE))
 
 	return style&bits == bits
 }
@@ -553,6 +588,12 @@ func (wb *WindowBase) AsWindowBase() *WindowBase {
 	return wb
 }
 
+// AddDisposable adds a Disposable resource that should be disposed of
+// together with this Window.
+func (wb *WindowBase) AddDisposable(d Disposable) {
+	wb.disposables = append(wb.disposables, d)
+}
+
 // Dispose releases the operating system resources, associated with the
 // *WindowBase.
 //
@@ -560,8 +601,14 @@ func (wb *WindowBase) AsWindowBase() *WindowBase {
 // Also, if a Container is disposed of, all its descendants will be released
 // as well.
 func (wb *WindowBase) Dispose() {
+	for _, d := range wb.disposables {
+		d.Dispose()
+	}
+
 	hWnd := wb.hWnd
 	if hWnd != 0 {
+		wb.disposingPublisher.Publish()
+
 		switch w := wb.window.(type) {
 		case *ToolTip:
 		case Widget:
@@ -569,16 +616,25 @@ func (wb *WindowBase) Dispose() {
 		}
 
 		wb.hWnd = 0
-		win.DestroyWindow(hWnd)
+		if _, ok := hwnd2WindowBase[hWnd]; ok {
+			win.DestroyWindow(hWnd)
+		}
 	}
 
 	if cm := wb.contextMenu; cm != nil {
 		cm.actions.Clear()
+		cm.Dispose()
 	}
 
 	for _, p := range wb.name2Property {
 		p.SetSource(nil)
 	}
+}
+
+// Disposing returns an Event that is published when the Window is disposed
+// of.
+func (wb *WindowBase) Disposing() *Event {
+	return wb.disposingPublisher.Event()
 }
 
 // IsDisposed returns if the *WindowBase has been disposed of.
@@ -630,12 +686,26 @@ func (wb *WindowBase) Enabled() bool {
 }
 
 // SetEnabled sets if the *WindowBase is enabled for user interaction.
-func (wb *WindowBase) SetEnabled(value bool) {
-	wb.enabled = value
+func (wb *WindowBase) SetEnabled(enabled bool) {
+	wb.enabled = enabled
 
-	win.EnableWindow(wb.hWnd, wb.window.Enabled())
+	wb.window.(applyEnableder).applyEnabled(wb.window.Enabled())
 
 	wb.enabledChangedPublisher.Publish()
+}
+
+type applyEnableder interface {
+	applyEnabled(enabled bool)
+}
+
+func (wb *WindowBase) applyEnabled(enabled bool) {
+	setWindowEnabled(wb.hWnd, enabled)
+}
+
+func setWindowEnabled(hwnd win.HWND, enabled bool) {
+	win.EnableWindow(hwnd, enabled)
+
+	win.UpdateWindow(hwnd)
 }
 
 // Font returns the *Font of the *WindowBase.
@@ -649,17 +719,25 @@ func (wb *WindowBase) Font() *Font {
 	return defaultFont
 }
 
-func setWindowFont(hwnd win.HWND, font *Font) {
-	win.SendMessage(hwnd, win.WM_SETFONT, uintptr(font.handleForDPI(0)), 1)
+// SetFont sets the *Font of the *WindowBase.
+func (wb *WindowBase) SetFont(font *Font) {
+	if font != wb.font {
+		wb.font = font
+
+		wb.window.(applyFonter).applyFont(font)
+	}
 }
 
-// SetFont sets the *Font of the *WindowBase.
-func (wb *WindowBase) SetFont(value *Font) {
-	if value != wb.font {
-		setWindowFont(wb.hWnd, value)
+type applyFonter interface {
+	applyFont(font *Font)
+}
 
-		wb.font = value
-	}
+func (wb *WindowBase) applyFont(font *Font) {
+	setWindowFont(wb.hWnd, font)
+}
+
+func setWindowFont(hwnd win.HWND, font *Font) {
+	win.SendMessage(hwnd, win.WM_SETFONT, uintptr(font.handleForDPI(0)), 1)
 }
 
 // Suspended returns if the *WindowBase is suspended for layout and repainting
@@ -727,13 +805,7 @@ func (wb *WindowBase) Visible() bool {
 
 // SetVisible sets if the *WindowBase is visible.
 func (wb *WindowBase) SetVisible(visible bool) {
-	var cmd int32
-	if visible {
-		cmd = win.SW_SHOW
-	} else {
-		cmd = win.SW_HIDE
-	}
-	win.ShowWindow(wb.hWnd, cmd)
+	setWindowVisible(wb.hWnd, visible)
 
 	wb.visible = visible
 
@@ -742,6 +814,16 @@ func (wb *WindowBase) SetVisible(visible bool) {
 	}
 
 	wb.visibleChangedPublisher.Publish()
+}
+
+func setWindowVisible(hwnd win.HWND, visible bool) {
+	var cmd int32
+	if visible {
+		cmd = win.SW_SHOW
+	} else {
+		cmd = win.SW_HIDE
+	}
+	win.ShowWindow(hwnd, cmd)
 }
 
 // BringToTop moves the *WindowBase to the top of the keyboard focus order.
@@ -1000,8 +1082,9 @@ func (wb *WindowBase) ClientBounds() Rectangle {
 }
 
 func (wb *WindowBase) sizeFromClientSize(clientSize Size) Size {
-	s := wb.Size()
-	cs := wb.ClientBounds().Size()
+	window := wb.window
+	s := window.Size()
+	cs := window.ClientBounds().Size()
 	ncs := Size{s.Width - cs.Width, s.Height - cs.Height}
 
 	return Size{clientSize.Width + ncs.Width, clientSize.Height + ncs.Height}
@@ -1013,6 +1096,52 @@ func (wb *WindowBase) SetClientSize(value Size) error {
 	return wb.SetSize(wb.sizeFromClientSize(value))
 }
 
+// Screenshot returns an image of the window.
+func (wb *WindowBase) Screenshot() (*image.RGBA, error) {
+	if hBmp, err := hBitmapFromWindow(wb); err != nil {
+		return nil, err
+	} else {
+
+		var bi win.BITMAPINFO
+		bi.BmiHeader.BiSize = uint32(unsafe.Sizeof(bi.BmiHeader))
+		hdc := win.GetDC(0)
+		if ret := win.GetDIBits(hdc, hBmp, 0, 0, nil, &bi, win.DIB_RGB_COLORS); ret == 0 {
+			return nil, newError("GetDIBits get bitmapinfo failed")
+		}
+
+		buf := make([]byte, bi.BmiHeader.BiSizeImage)
+		bi.BmiHeader.BiCompression = win.BI_RGB
+		if ret := win.GetDIBits(hdc, hBmp, 0, uint32(bi.BmiHeader.BiHeight), &buf[0], &bi, win.DIB_RGB_COLORS); ret == 0 {
+			return nil, newError("GetDIBits failed")
+		}
+
+		width := int(bi.BmiHeader.BiWidth)
+		height := int(bi.BmiHeader.BiHeight)
+		im := image.NewRGBA(image.Rect(0, 0, width, height))
+		n := 0
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				r := buf[n+2]
+				g := buf[n+1]
+				b := buf[n+0]
+				n += 4
+				im.Set(x, height-y, color.RGBA{r, g, b, 255})
+			}
+		}
+		return im, nil
+	}
+}
+
+// FocusedWindow returns the Window that has the keyboard input focus.
+func FocusedWindow() Window {
+	return windowFromHandle(win.GetFocus())
+}
+
+// Focused returns whether the Window has the keyboard input focus.
+func (wb *WindowBase) Focused() bool {
+	return wb.hWnd == win.GetFocus()
+}
+
 // SetFocus sets the keyboard input focus to the *WindowBase.
 func (wb *WindowBase) SetFocus() error {
 	if win.SetFocus(wb.hWnd) == 0 {
@@ -1020,6 +1149,12 @@ func (wb *WindowBase) SetFocus() error {
 	}
 
 	return nil
+}
+
+// FocusedChanged returns an Event that you can attach to for handling focus
+// change events for the WindowBase.
+func (wb *WindowBase) FocusedChanged() *Event {
+	return wb.focusedChangedPublisher.Event()
 }
 
 // CreateCanvas creates and returns a *Canvas that can be used to draw
@@ -1057,6 +1192,12 @@ func (wb *WindowBase) KeyUp() *KeyEvent {
 	return wb.keyUpPublisher.Event()
 }
 
+// DropFiles returns a *DropFilesEvent that you can attach to for handling
+// drop file events for the *WindowBase.
+func (wb *WindowBase) DropFiles() *DropFilesEvent {
+	return wb.dropFilesPublisher.Event(wb.hWnd)
+}
+
 // MouseDown returns a *MouseEvent that you can attach to for handling
 // mouse down events for the *WindowBase.
 func (wb *WindowBase) MouseDown() *MouseEvent {
@@ -1075,21 +1216,22 @@ func (wb *WindowBase) MouseUp() *MouseEvent {
 	return wb.mouseUpPublisher.Event()
 }
 
+func (wb *WindowBase) MouseWheel() *MouseEvent {
+	return wb.mouseWheelPublisher.Event()
+}
+
 func (wb *WindowBase) publishMouseEvent(publisher *MouseEventPublisher, wParam, lParam uintptr) {
 	x := int(win.GET_X_LPARAM(lParam))
 	y := int(win.GET_Y_LPARAM(lParam))
+	button := MouseButton(wParam&win.MK_LBUTTON | wParam&win.MK_RBUTTON | wParam&win.MK_MBUTTON)
 
-	var button MouseButton
-	switch true {
-	case wParam&win.MK_LBUTTON > 0:
-		button = LeftButton
+	publisher.Publish(x, y, button)
+}
 
-	case wParam&win.MK_MBUTTON > 0:
-		button = MiddleButton
-
-	case wParam&win.MK_RBUTTON > 0:
-		button = RightButton
-	}
+func (wb *WindowBase) publishMouseWheelEvent(publisher *MouseEventPublisher, wParam, lParam uintptr) {
+	x := int(win.GET_X_LPARAM(lParam))
+	y := int(win.GET_Y_LPARAM(lParam))
+	button := MouseButton(uint32(wParam))
 
 	publisher.Publish(x, y, button)
 }
@@ -1174,6 +1316,24 @@ func defaultWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (result u
 	return
 }
 
+type menuer interface {
+	Menu() *Menu
+}
+
+func menuContainsAction(menu *Menu, action *Action) bool {
+	if menu.Actions().Contains(action) {
+		return true
+	}
+
+	for _, a := range menu.actions.actions {
+		if a.menu != nil && menuContainsAction(a.menu, action) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (wb *WindowBase) handleKeyDown(wParam, lParam uintptr) {
 	key := Key(wParam)
 
@@ -1185,7 +1345,15 @@ func (wb *WindowBase) handleKeyDown(wParam, lParam uintptr) {
 		shortcut := Shortcut{ModifiersDown(), key}
 		if action, ok := shortcut2Action[shortcut]; ok {
 			if action.Visible() && action.Enabled() {
-				action.raiseTriggered()
+				window := wb.window
+
+				if w, ok := window.(Widget); ok {
+					window = ancestor(w)
+				}
+
+				if m, ok := window.(menuer); ok && menuContainsAction(m.Menu(), action) {
+					action.raiseTriggered()
+				}
 			}
 		}
 	}
@@ -1208,6 +1376,8 @@ func (wb *WindowBase) handleKeyUp(wParam, lParam uintptr) {
 // When implementing your own WndProc to add or modify behavior, call the
 // WndProc of the embedded window for messages you don't handle yourself.
 func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
+	window := windowFromHandle(hwnd)
+
 	switch msg {
 	case win.WM_ERASEBKGND:
 		if wb.background == nil {
@@ -1225,6 +1395,12 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		}
 
 		return 1
+
+	case win.WM_HSCROLL, win.WM_VSCROLL:
+		if window := windowFromHandle(win.HWND(lParam)); window != nil {
+			// The window that sent the notification shall handle it itself.
+			return window.WndProc(hwnd, msg, wParam, lParam)
+		}
 
 	case win.WM_LBUTTONDOWN, win.WM_MBUTTONDOWN, win.WM_RBUTTONDOWN:
 		if msg == win.WM_LBUTTONDOWN && wb.origWndProcPtr == 0 {
@@ -1246,6 +1422,12 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 
 	case win.WM_MOUSEMOVE:
 		wb.publishMouseEvent(&wb.mouseMovePublisher, wParam, lParam)
+
+	case win.WM_MOUSEWHEEL:
+		wb.publishMouseWheelEvent(&wb.mouseWheelPublisher, wParam, lParam)
+
+	case win.WM_SETFOCUS, win.WM_KILLFOCUS:
+		wb.focusedChangedPublisher.Publish()
 
 	case win.WM_SETCURSOR:
 		if wb.cursor != nil {
@@ -1288,26 +1470,30 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 	case win.WM_KEYUP:
 		wb.handleKeyUp(wParam, lParam)
 
+	case win.WM_DROPFILES:
+		wb.dropFilesPublisher.Publish(win.HDROP(wParam))
+
 	case win.WM_SIZE, win.WM_SIZING:
 		wb.sizeChangedPublisher.Publish()
 
 	case win.WM_DESTROY:
-		switch w := wb.window.(type) {
-		case *ToolTip:
-		case Widget:
-			globalToolTip.RemoveTool(w)
+		if wb.origWndProcPtr != 0 {
+			// As we subclass all windows of system classes, we prevented the
+			// clean-up code in the WM_NCDESTROY handlers of some windows from
+			// being called. To fix this, we restore the original window
+			// procedure here.
+			win.SetWindowLongPtr(wb.hWnd, win.GWLP_WNDPROC, wb.origWndProcPtr)
 		}
 
 		delete(hwnd2WindowBase, hwnd)
 
-		wb.hWnd = 0
 		wb.window.Dispose()
+		wb.hWnd = 0
 	}
 
-	if window := windowFromHandle(hwnd); window != nil {
-		origWndProcPtr := window.AsWindowBase().origWndProcPtr
-		if origWndProcPtr != 0 {
-			return win.CallWindowProc(origWndProcPtr, hwnd, msg, wParam, lParam)
+	if window != nil {
+		if wndProc := window.AsWindowBase().origWndProcPtr; wndProc != 0 {
+			return win.CallWindowProc(wndProc, hwnd, msg, wParam, lParam)
 		}
 	}
 

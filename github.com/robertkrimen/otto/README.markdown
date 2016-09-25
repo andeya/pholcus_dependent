@@ -20,10 +20,8 @@ Run something in the VM
 
 Get a value out of the VM
 
-    if value, err := vm.Get("abc"); err == nil {
-    	if value_int, err := value.ToInteger(); err == nil {
-    	    fmt.Printf("", value_int, err)
-    	}
+    value, err := vm.Get("abc")
+    	value, _ := value.ToInteger()
     }
 
 Set a number

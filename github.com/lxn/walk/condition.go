@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 type Condition interface {
@@ -122,4 +124,20 @@ func NewAnyCondition(items ...Condition) Condition {
 
 func (ac *anyCondition) Satisfied() bool {
 	return ac.satisfied(false)
+}
+
+type negatedCondition struct {
+	other Condition
+}
+
+func NewNegatedCondition(other Condition) Condition {
+	return &negatedCondition{other}
+}
+
+func (nc *negatedCondition) Satisfied() bool {
+	return !nc.other.Satisfied()
+}
+
+func (nc *negatedCondition) Changed() *Event {
+	return nc.other.Changed()
 }

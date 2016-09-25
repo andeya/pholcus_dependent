@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -60,6 +62,8 @@ func NewTabWidget(parent Container) (*TabWidget, error) {
 		return nil, lastError("CreateWindowEx")
 	}
 	win.SendMessage(tw.hWndTab, win.WM_SETFONT, uintptr(defaultFont.handleForDPI(0)), 1)
+
+	setWindowFont(tw.hWndTab, tw.Font())
 
 	tw.MustRegisterProperty("HasCurrentPage", NewReadOnlyBoolProperty(
 		func() bool {
@@ -122,16 +126,20 @@ func (tw *TabWidget) SizeHint() Size {
 	return Size{100, 100}
 }
 
-func (tw *TabWidget) SetEnabled(enabled bool) {
-	tw.WidgetBase.SetEnabled(enabled)
+func (tw *TabWidget) applyEnabled(enabled bool) {
+	tw.WidgetBase.applyEnabled(enabled)
 
-	setDescendantsEnabled(tw, enabled)
+	setWindowEnabled(tw.hWndTab, enabled)
+
+	applyEnabledToDescendants(tw, enabled)
 }
 
-func (tw *TabWidget) SetFont(f *Font) {
-	tw.WidgetBase.SetFont(f)
+func (tw *TabWidget) applyFont(font *Font) {
+	tw.WidgetBase.applyFont(font)
 
-	setDescendantsFont(tw, f)
+	setWindowFont(tw.hWndTab, font)
+
+	applyFontToDescendants(tw, font)
 }
 
 func (tw *TabWidget) CurrentIndex() int {
@@ -350,6 +358,8 @@ func (tw *TabWidget) onInsertedPage(index int, page *TabPage) (err error) {
 	tw.resizePages()
 
 	page.tabWidget = tw
+
+	page.applyFont(tw.Font())
 
 	return
 }

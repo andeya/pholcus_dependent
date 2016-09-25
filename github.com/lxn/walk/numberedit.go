@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 import (
@@ -53,6 +55,8 @@ func NewNumberEdit(parent Container) (*NumberEdit, error) {
 		return nil, err
 	}
 
+	ne.edit.applyFont(ne.Font())
+
 	if err = ne.SetValue(0); err != nil {
 		return nil, err
 	}
@@ -71,36 +75,24 @@ func NewNumberEdit(parent Container) (*NumberEdit, error) {
 	return ne, nil
 }
 
-// Enabled returns whether the NumberEdit is enabled.
-func (ne *NumberEdit) Enabled() bool {
-	return ne.WidgetBase.Enabled()
-}
+func (ne *NumberEdit) applyEnabled(enabled bool) {
+	ne.WidgetBase.applyEnabled(enabled)
 
-// SetEnabled sets whether the NumberEdit is enabled.
-func (ne *NumberEdit) SetEnabled(value bool) {
-	ne.edit.SetEnabled(value)
-	ne.WidgetBase.SetEnabled(value)
-}
-
-// Font returns the Font of the NumberEdit.
-func (ne *NumberEdit) Font() *Font {
-	var f *Font
-	if ne.edit != nil {
-		f = ne.font
+	if ne.edit == nil {
+		return
 	}
 
-	if f != nil {
-		return f
-	} else if ne.parent != nil {
-		return ne.parent.Font()
-	}
-
-	return defaultFont
+	ne.edit.applyEnabled(enabled)
 }
 
-// SetFont sets the Font of the NumberEdit.
-func (ne *NumberEdit) SetFont(value *Font) {
-	ne.edit.SetFont(value)
+func (ne *NumberEdit) applyFont(font *Font) {
+	ne.WidgetBase.applyFont(font)
+
+	if ne.edit == nil {
+		return
+	}
+
+	ne.edit.applyFont(font)
 }
 
 // LayoutFlags returns information that is mainly interesting to Layout
@@ -736,4 +728,8 @@ func (nle *numberLineEdit) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uin
 	}
 
 	return nle.LineEdit.WndProc(hwnd, msg, wParam, lParam)
+}
+
+func (ne *NumberEdit) SetToolTipText(s string) error {
+	return ne.edit.SetToolTipText(s)
 }

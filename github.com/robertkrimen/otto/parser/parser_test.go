@@ -8,7 +8,6 @@ import (
 
 	"github.com/robertkrimen/otto/ast"
 	"github.com/robertkrimen/otto/file"
-	"github.com/robertkrimen/otto/underscore"
 )
 
 func firstErr(err error) error {
@@ -22,10 +21,6 @@ func firstErr(err error) error {
 var matchBeforeAfterSeparator = regexp.MustCompile(`(?m)^[ \t]*---$`)
 
 func testParse(src string) (parser *_parser, program *ast.Program, err error) {
-	return testParseWithMode(src, 0)
-}
-
-func testParseWithMode(src string, mode Mode) (parser *_parser, program *ast.Program, err error) {
 	defer func() {
 		if tmp := recover(); tmp != nil {
 			switch tmp := tmp.(type) {
@@ -41,7 +36,6 @@ func testParseWithMode(src string, mode Mode) (parser *_parser, program *ast.Pro
 		}
 	}()
 	parser = newParser("", src)
-	parser.mode = mode
 	program, err = parser.parse()
 	return
 }
@@ -1010,14 +1004,4 @@ func TestPosition(t *testing.T) {
 		node = program.Body[0].(*ast.ExpressionStatement).Expression.(*ast.FunctionLiteral)
 		is(node.(*ast.FunctionLiteral).Source, "function(){ return abc; }")
 	})
-}
-
-func BenchmarkParser(b *testing.B) {
-	src := underscore.Source()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		parser := newParser("", src)
-		parser.parse()
-	}
 }

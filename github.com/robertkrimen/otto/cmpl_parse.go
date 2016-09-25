@@ -82,9 +82,6 @@ func (cmpl *_compiler) parseExpression(in ast.Expression) _nodeExpression {
 			identifier: in.Identifier.Name,
 		}
 
-	case *ast.EmptyExpression:
-		return nil
-
 	case *ast.FunctionLiteral:
 		name := ""
 		if in.Name != nil {

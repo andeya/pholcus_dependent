@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package declarative
 
 import (
@@ -32,12 +34,14 @@ type RadioButtonGroupBox struct {
 	OnMouseUp          walk.MouseEventHandler
 	OnSizeChanged      walk.EventHandler
 	Title              string
+	DataMember         string
 	DataBinder         DataBinder
 	Layout             Layout
 	Children           []Widget
-	DataMember         string
-	Optional           bool
 	Buttons            []RadioButton
+	Optional           bool
+	Checkable          bool
+	Checked            Property
 }
 
 func (rbgb RadioButtonGroupBox) Create(builder *Builder) error {
@@ -56,6 +60,8 @@ func (rbgb RadioButtonGroupBox) Create(builder *Builder) error {
 		if err := w.SetTitle(rbgb.Title); err != nil {
 			return err
 		}
+
+		w.SetCheckable(rbgb.Checkable)
 
 		if err := (RadioButtonGroup{
 			DataMember: rbgb.DataMember,

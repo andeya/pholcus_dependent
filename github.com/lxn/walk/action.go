@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package walk
 
 type actionChangedHandler interface {
@@ -80,6 +82,7 @@ func (a *Action) release() {
 
 		if a.menu != nil {
 			a.menu.actions.Clear()
+			a.menu.Dispose()
 		}
 
 		delete(actionsById, a.id)
@@ -174,6 +177,8 @@ func (a *Action) SetEnabledCondition(c Condition) {
 			}
 		})
 	}
+
+	a.raiseChanged()
 }
 
 func (a *Action) Exclusive() bool {
@@ -335,6 +340,8 @@ func (a *Action) SetVisibleCondition(c Condition) {
 			}
 		})
 	}
+
+	a.raiseChanged()
 }
 
 func (a *Action) Triggered() *Event {

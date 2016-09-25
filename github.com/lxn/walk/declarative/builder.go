@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build windows
+
 package declarative
 
 import (
@@ -14,7 +16,25 @@ import (
 	"github.com/lxn/walk"
 )
 
-var conditionsByName = make(map[string]walk.Condition)
+var (
+	conditionsByName = make(map[string]walk.Condition)
+	imagesByFilePath = make(map[string]walk.Image)
+)
+
+func imageFromFile(filePath string) (walk.Image, error) {
+	if image, ok := imagesByFilePath[filePath]; ok {
+		return image, nil
+	}
+
+	image, err := walk.NewImageFromFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	imagesByFilePath[filePath] = image
+
+	return image, nil
+}
 
 func MustRegisterCondition(name string, condition walk.Condition) {
 	if name == "" {
@@ -37,6 +57,7 @@ type declWidget struct {
 
 type Builder struct {
 	level                    int
+	rows                     int
 	columns                  int
 	row                      int
 	col                      int
@@ -175,22 +196,51 @@ func (b *Builder) InitWidget(d Widget, w walk.Window, customInit func() error) e
 			return err
 		}
 
+		type SetStretchFactorer interface {
+			SetStretchFactor(widget walk.Widget, factor int) error
+		}
+
 		if p := widget.Parent(); p != nil {
+			if stretchFactor < 1 {
+				stretchFactor = 1
+			}
+
 			switch l := p.Layout().(type) {
-			case *walk.BoxLayout:
-				if stretchFactor < 1 {
-					stretchFactor = 1
-				}
+			case SetStretchFactorer:
 				if err := l.SetStretchFactor(widget, stretchFactor); err != nil {
 					return err
 				}
 
 			case *walk.GridLayout:
+				csf := l.ColumnStretchFactor(column)
+				if csf < stretchFactor {
+					csf = stretchFactor
+				}
+				l.SetColumnStretchFactor(column, csf)
+
+				rsf := l.RowStretchFactor(row)
+				if rsf < stretchFactor {
+					rsf = stretchFactor
+				}
+				l.SetRowStretchFactor(row, rsf)
+
 				if rowSpan < 1 {
 					rowSpan = 1
 				}
 				if columnSpan < 1 {
 					columnSpan = 1
+				}
+
+				if b.rows > 0 && column == 0 && row == 0 {
+					if b.row+rowSpan > b.rows {
+						b.col++
+						b.row = 0
+					}
+
+					column = b.col
+					row = b.row
+
+					b.row += rowSpan
 				}
 
 				if b.columns > 0 && row == 0 && column == 0 {
@@ -239,11 +289,13 @@ func (b *Builder) InitWidget(d Widget, w walk.Window, customInit func() error) e
 			}()
 
 			if g, ok := layout.(Grid); ok {
+				rows := b.rows
 				columns := b.columns
 				defer func() {
-					b.columns, b.row, b.col = columns, row, column+columnSpan
+					b.rows, b.columns, b.row, b.col = rows, columns, row, column+columnSpan
 				}()
 
+				b.rows = g.Rows
 				b.columns = g.Columns
 				b.row = 0
 				b.col = 0
@@ -401,6 +453,30 @@ func (b *Builder) initProperties() error {
 }
 
 func (b *Builder) conditionOrProperty(data Property) interface{} {
+	parse := func(expr string, required bool) walk.Condition {
+		var negated bool
+		if strings.HasPrefix(expr, "!") {
+			negated = true
+			expr = strings.TrimSpace(expr[1:])
+		}
+
+		var condition walk.Condition
+
+		if p := b.property(expr); p != nil {
+			condition = p.(walk.Condition)
+		} else if c, ok := conditionsByName[expr]; ok {
+			condition = c
+		} else if required {
+			panic("unknown condition or property name: " + expr)
+		}
+
+		if negated {
+			condition = walk.NewNegatedCondition(condition)
+		}
+
+		return condition
+	}
+
 	switch val := data.(type) {
 	case bindData:
 		if c, ok := b.knownCompositeConditions[val.expression]; ok {
@@ -414,13 +490,7 @@ func (b *Builder) conditionOrProperty(data Property) interface{} {
 			var conditions []walk.Condition
 
 			for _, cond := range conds {
-				if p := b.property(cond); p != nil {
-					conditions = append(conditions, p.(walk.Condition))
-				} else if c, ok := conditionsByName[cond]; ok {
-					conditions = append(conditions, c)
-				} else {
-					panic("unknown condition or property name: " + cond)
-				}
+				conditions = append(conditions, parse(cond, true))
 			}
 
 			var condition walk.Condition
@@ -434,11 +504,7 @@ func (b *Builder) conditionOrProperty(data Property) interface{} {
 			return condition
 		}
 
-		if p := b.property(val.expression); p != nil {
-			return p
-		}
-
-		return conditionsByName[val.expression]
+		return parse(val.expression, false)
 
 	case walk.Condition:
 		return val
